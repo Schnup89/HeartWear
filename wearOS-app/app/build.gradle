@@ -8,11 +8,11 @@ android {
     compileSdkVersion 30
 
     defaultConfig {
-        applicationId "de.domi2803.heartrate_streamer"
+        applicationId "de.schnup89.heartrate_streamer_UDP"
         minSdkVersion 25
         targetSdkVersion 30
         versionCode 4
-        versionName "1.2"
+        versionName "0.2"
     }
 
     buildTypes {
