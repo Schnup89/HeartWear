@@ -164,7 +164,8 @@ class HeartRateService : Service(), SensorEventListener2 {
                     )
                 )
             } catch (e: Exception) {
-                Toast.makeText(baseContext, "Network Error", Toast.LENGTH_LONG).show();
+                //Toast.makeText(baseContext, "Network Error", Toast.LENGTH_LONG).show();
+                //Toast.makeText(baseContext, e.message.toString(), Toast.LENGTH_LONG).show();
             }
         }
         notificationManager.notify(NOTIFICATION_ID,generateNotification("jo"))
