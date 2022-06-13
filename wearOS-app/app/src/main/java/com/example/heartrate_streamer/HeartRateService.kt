@@ -1,10 +1,7 @@
 package com.example.heartrate_streamer
 
 import android.annotation.SuppressLint
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
-import android.app.Service
+import android.app.*
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -13,43 +10,47 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener2
 import android.hardware.SensorManager
-import android.os.BatteryManager
-import android.os.Build
-import android.os.IBinder
-import android.os.PowerManager
+import android.os.*
+import android.widget.Toast
+import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.auth.FirebaseUser
-import com.google.firebase.auth.ktx.auth
-import com.google.firebase.database.ktx.database
-import com.google.firebase.ktx.Firebase
+import androidx.wear.ongoing.OngoingActivity
+import androidx.wear.ongoing.Status
+import java.net.DatagramPacket
+import java.net.DatagramSocket
+import java.net.InetAddress
 import kotlin.math.roundToInt
 
 
 class HeartRateService : Service(), SensorEventListener2 {
-    private final var STOP_ACTION = "STOP_ACTION";
-    private lateinit var mSensorManager : SensorManager;
-    private lateinit var mHeartRateSensor: Sensor;
-    private lateinit var auth: FirebaseAuth;
-    private lateinit var currentUser : FirebaseUser;
-
-    private lateinit var wakeLock : PowerManager.WakeLock;
+    private final var STOP_ACTION = "STOP_ACTION"
+    private lateinit var mSensorManager : SensorManager
+    private lateinit var mHeartRateSensor: Sensor
+    var sHost = ""
+    private lateinit var wakeLock : PowerManager.WakeLock
+    private lateinit var notificationManager: NotificationManager
+    private val NOTIFICATION_ID = 12345678
 
     private val broadcastReceiver: BroadcastReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent) {
             if(intent.action == STOP_ACTION){
                stopSelf();
+                notificationManager.cancel(NOTIFICATION_ID);
                 android.os.Process.killProcess(android.os.Process.myPid());
+            }
+            if (intent.getAction() == "updateHost") {
+                sHost = intent.getExtras()?.get("host").toString();
             }
         }
     }
 
 
+    @RequiresApi(Build.VERSION_CODES.O)
     override fun onCreate() {
         super.onCreate()
         var intentFilter = IntentFilter();
         intentFilter.addAction(STOP_ACTION);
-
+        intentFilter.addAction("updateHost");
         registerReceiver(broadcastReceiver, intentFilter);
 
         mSensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
@@ -60,6 +61,15 @@ class HeartRateService : Service(), SensorEventListener2 {
                 acquire();
             }
         }
+        var getHostIntent = Intent();
+        getHostIntent.action = "getHost";
+        sendBroadcast(getHostIntent);
+
+        val policy = StrictMode.ThreadPolicy.Builder().permitAll().build()
+        StrictMode.setThreadPolicy(policy)
+
+        notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
     }
 
     override fun onDestroy() {
@@ -130,34 +140,34 @@ class HeartRateService : Service(), SensorEventListener2 {
     private var oldBatteryPercent : Int = 0;
 
     // Called when the sensor has a new value
+    @RequiresApi(Build.VERSION_CODES.O)
     @SuppressLint("SetTextI18n")
     override fun onSensorChanged(p0: SensorEvent?) {
         var heartRate: Float? = p0?.values?.get(0) ?: return;
         var roundedHeartRate = (heartRate!!).roundToInt();
         if(roundedHeartRate == oldRoundedHeartRate) return;     // If the heart rate only changes a bit, don't bother to update the database.
 
-        //textBPM.text = roundedHeartRate.toString() + "bpm";  // Update UI Text
         var updateHRIntent = Intent();
         updateHRIntent.action = "updateHR";
         updateHRIntent.putExtra("bpm", roundedHeartRate);
         this.sendBroadcast(updateHRIntent);
 
-        if(Firebase.auth.currentUser != null){
-            var database = Firebase.database.reference;
-            var timestamp = System.currentTimeMillis();
-
-            oldRoundedHeartRate = roundedHeartRate;
-            var userDatabaseObject = database.child(Firebase.auth.currentUser!!.uid.toString());
-            userDatabaseObject.child("currentHR").setValue(roundedHeartRate);  // Update current heart rate in the database
-            userDatabaseObject.child("lastUpdateTimestamp").setValue(timestamp);    // set timestamp
-
-            val batteryPercent = getBatteryPercentage(this);
-            if(batteryPercent != oldBatteryPercent){
-                oldBatteryPercent = batteryPercent;
-                userDatabaseObject.child("currentBattery").setValue(batteryPercent);
+        val sendData : String  = heartRate.toString()
+        if (!this.sHost.isEmpty()) {
+            try {
+                DatagramSocket().send(
+                    DatagramPacket(
+                        sendData.toByteArray(),
+                        sendData.length,
+                        InetAddress.getByName(sHost),
+                        2115
+                    )
+                )
+            } catch (e: Exception) {
+                Toast.makeText(baseContext, "Network Error", Toast.LENGTH_LONG).show();
             }
         }
-
+        notificationManager.notify(NOTIFICATION_ID,generateNotification("jo"))
     }
 
     private fun getBatteryPercentage(context: Context): Int {
@@ -179,5 +189,99 @@ class HeartRateService : Service(), SensorEventListener2 {
             val batteryPct = level / scale.toDouble()
             (batteryPct * 100).toInt()
         }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.O)
+    private fun generateNotification(mainText: String): Notification {
+
+        // 0. Get data (note, the main notification text comes from the parameter above).
+        val titleText = "Heart2Network"
+
+        // 1. Create Notification Channel.
+        val notificationChannel = NotificationChannel(
+            "walking_workout_channel_01", titleText, NotificationManager.IMPORTANCE_DEFAULT)
+
+        // Adds NotificationChannel to system. Attempting to create an
+        // existing notification channel with its original values performs
+        // no operation, so it's safe to perform the below sequence.
+        notificationManager.createNotificationChannel(notificationChannel)
+
+        // 2. Build the BIG_TEXT_STYLE.
+        val bigTextStyle = NotificationCompat.BigTextStyle()
+            .bigText(mainText)
+            .setBigContentTitle(titleText)
+
+        // 3. Set up main Intent/Pending Intents for notification.
+        val launchActivityIntent = Intent(this, MainActivity::class.java)
+
+        val cancelIntent = Intent(this, HeartRateService::class.java)
+        cancelIntent.action = "STOP_ACTION"
+
+        val servicePendingIntent = PendingIntent.getService(
+            this, 0, cancelIntent, PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val activityPendingIntent = PendingIntent.getActivity(
+            this, 0, launchActivityIntent, 0
+        )
+
+        // 4. Build and issue the notification.
+        val notificationCompatBuilder =
+            NotificationCompat.Builder(applicationContext, "walking_workout_channel_01")
+
+        // TODO: Review Notification builder code.
+        val notificationBuilder = notificationCompatBuilder
+            .setStyle(bigTextStyle)
+            .setContentTitle(titleText)
+            .setContentText(mainText)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setDefaults(NotificationCompat.DEFAULT_ALL)
+            // Makes Notification an Ongoing Notification (a Notification with a background task).
+            .setOngoing(true)
+            // For an Ongoing Activity, used to decide priority on the watch face.
+            .setCategory(NotificationCompat.CATEGORY_WORKOUT)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .addAction(
+                R.drawable.close_button, "H2N",
+                activityPendingIntent
+            )
+            .addAction(
+                R.drawable.ic_full_cancel,
+                "joop",
+                servicePendingIntent
+            )
+
+        // TODO: Create an Ongoing Activity.
+        val ongoingActivityStatus = Status.Builder()
+            // Sets the text used across various surfaces.
+            .addTemplate(mainText)
+            .build()
+
+        val ongoingActivity =
+            OngoingActivity.Builder(applicationContext, NOTIFICATION_ID, notificationBuilder)
+                // Sets icon that will appear on the watch face in active mode. If it isn't set,
+                // the watch face will use the static icon in active mode.
+                // Supported animated icon types: AVD and AnimationDrawable.
+                .setAnimatedIcon(R.drawable.outline_monitor_heart_red_900_24dp)
+                // Sets the icon that will appear on the watch face in ambient mode.
+                // Falls back to Notification's smallIcon if not set. If neither is set,
+                // an Exception is thrown.
+                .setStaticIcon(R.drawable.outline_monitor_heart_red_900_24dp)
+                // Sets the tap/touch event, so users can re-enter your app from the
+                // other surfaces.
+                // Falls back to Notification's contentIntent if not set. If neither is set,
+                // an Exception is thrown.
+                .setTouchIntent(activityPendingIntent)
+                // In our case, sets the text used for the Ongoing Activity (more options are
+                // available for timers and stop watches).
+                .setStatus(ongoingActivityStatus)
+                .build()
+
+        // Applies any Ongoing Activity updates to the notification builder.
+        // This method should always be called right before you build your notification,
+        // since an Ongoing Activity doesn't hold references to the context.
+        ongoingActivity.apply(applicationContext)
+
+        return notificationBuilder.build()
     }
 }
