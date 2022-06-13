@@ -1,6 +1,8 @@
 # HeartWear - Broadcast your HearRate to the Network with UDP-Packets
 
 
+~~ ONLY FOR WEAROS ~~
+
 First of all, many thanks to https://github.com/Domi2803 for the WearOS OBS Version!  
 I've changed to code to send the Heart-Rate-Data via UDP-Network packets to a specified host.  
   
