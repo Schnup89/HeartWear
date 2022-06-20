@@ -104,6 +104,7 @@ class MainActivity : WearableActivity() {
             uiTextBPM.visibility = if(uiTextBPM.visibility == View.VISIBLE) View.GONE else View.VISIBLE;
             uiedit.visibility = if(uiedit.visibility == View.VISIBLE) View.GONE else View.VISIBLE;
             uititle.visibility = if(uititle.visibility == View.VISIBLE) View.GONE else View.VISIBLE;
+            uiexit.visibility = if(uiexit.visibility == View.VISIBLE) View.GONE else View.VISIBLE;
             true;
         }
         uiexit.setOnClickListener{
