@@ -152,7 +152,7 @@ class HeartRateService : Service(), SensorEventListener2 {
         updateHRIntent.putExtra("bpm", roundedHeartRate);
         this.sendBroadcast(updateHRIntent);
 
-        val sendData : String  = heartRate.toString()
+        val sendData : String  = roundedHeartRate.toString()
         if (!this.sHost.isEmpty()) {
             try {
                 DatagramSocket().send(
